@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+google-genai
+langchain
+langchain-community
+langchain-core
+langchain-groq
+langchain-huggingface
+faiss-cpu
+sentence-transformers
+llama-parse
+pymupdf
+rank_bm25
+langchain-classic

@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF AI Workspace</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/inter-ui/3.19.3/inter.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0e1016; /* Deepest background */
+            --bg-panel: #181b25; /* Sidebar/Cards */
+            --bg-hover: #232734;
+            --text-main: #ffffff;
+            --text-muted: #9ca3af;
+            --accent: #6366f1; /* Indigo accent */
+            --accent-hover: #4f46e5;
+            --border: #2d313e;
+            --success: #10b981;
+            --user-msg-bg: #2d313e;
+            --ai-msg-bg: #181b25;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+        }
+
+        /* --- SIDEBAR --- */
+        .sidebar {
+            width: 260px;
+            background-color: var(--bg-dark);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            flex-shrink: 0;
+            transition: transform 0.3s ease;
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 40px;
+        }
+        
+        .logo span { background: var(--text-main); color: var(--bg-dark); padding: 2px 6px; border-radius: 4px; font-size: 14px; }
+
+        .menu-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            color: var(--text-muted);
+            text-decoration: none;
+            border-radius: 12px;
+            margin-bottom: 4px;
+            transition: all 0.2s;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .menu-item:hover, .menu-item.active {
+            background-color: var(--bg-hover);
+            color: var(--text-main);
+        }
+
+        /* PDF Active State in Sidebar */
+        .pdf-card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 16px;
+            margin-top: 10px;
+            display: none; /* Hidden until upload */
+        }
+        
+        .pdf-card.visible { display: block; animation: fadeIn 0.5s; }
+
+        .pdf-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .pdf-icon {
+            width: 32px;
+            height: 32px;
+            background: rgba(248, 113, 113, 0.1);
+            color: #f87171;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .pdf-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-main);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 140px;
+        }
+
+        .action-btn {
+            width: 100%;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 8px;
+            border-radius: 8px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .action-btn:hover {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            border-color: #ef4444;
+        }
+
+        /* --- MAIN CONTENT --- */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            background: var(--bg-dark); /* Match body */
+        }
+
+        .top-bar {
+            padding: 24px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .top-bar h2 { font-size: 24px; font-weight: 600; }
+        .top-bar p { color: var(--text-muted); font-size: 14px; margin-top: 4px; }
+
+        /* UPLOAD VIEW */
+        .upload-view {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .upload-box {
+            background: var(--bg-panel);
+            border: 2px dashed var(--border);
+            border-radius: 24px;
+            padding: 60px;
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .upload-box:hover {
+            border-color: var(--accent);
+            background: var(--bg-hover);
+        }
+
+        .upload-icon-large {
+            font-size: 48px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .chat-view {
+            flex: 1;
+            display: none; 
+            flex-direction: column;
+            padding: 0 40px 40px 40px;
+            overflow: hidden;
+        }
+
+        .chat-container {
+            background: var(--bg-panel);
+            border-radius: 24px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            position: relative;
+        }
+
+        .chat-history {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            scroll-behavior: smooth;
+        }
+
+        /* Scrollbar Styling */
+        .chat-history::-webkit-scrollbar { width: 6px; }
+        .chat-history::-webkit-scrollbar-track { background: transparent; }
+        .chat-history::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        .message {
+            display: flex;
+            flex-direction: column;
+            max-width: 80%;
+            animation: slideIn 0.3s ease;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            align-items: flex-end;
+        }
+
+        .message.ai {
+            align-self: flex-start;
+            align-items: flex-start;
+        }
+
+        .msg-bubble {
+            padding: 14px 20px;
+            border-radius: 18px;
+            font-size: 15px;
+            line-height: 1.6;
+            position: relative;
+        }
+
+        .user .msg-bubble {
+            background: var(--accent);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .ai .msg-bubble {
+            background: var(--user-msg-bg);
+            color: var(--text-main);
+            border-bottom-left-radius: 4px;
+            border: 1px solid var(--border);
+        }
+
+        .msg-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            margin-left: 4px;
+        }
+
+        .user .msg-label { margin-right: 4px; margin-left: 0; }
+
+        /* INPUT AREA */
+        .input-area {
+            padding: 20px;
+            background: var(--bg-panel);
+            border-top: 1px solid var(--border);
+        }
+
+        .input-wrapper {
+            position: relative;
+            max-width: 100%;
+        }
+
+        .chat-input {
+            width: 100%;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 16px 50px 16px 20px;
+            border-radius: 16px;
+            font-size: 15px;
+            outline: none;
+            resize: none;
+            max-height: 150px;
+            transition: border 0.2s;
+        }
+
+        .chat-input:focus { border-color: var(--accent); }
+
+        .send-btn {
+            position: absolute;
+            right: 12px;
+            bottom: 12px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .send-btn:disabled { background: var(--border); cursor: not-allowed; }
+        .send-btn:hover:not(:disabled) { background: var(--accent-hover); }
+
+        /* Loading Animation */
+        .typing-indicator { display: flex; gap: 4px; padding: 4px; }
+        .dot { width: 6px; height: 6px; background: var(--text-muted); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out; }
+        .dot:nth-child(1) { animation-delay: -0.32s; }
+        .dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Mobile */
+        @media (max-width: 768px) {
+            .sidebar { position: absolute; left: -260px; height: 100%; z-index: 100; }
+            .sidebar.open { transform: translateX(260px); }
+            .top-bar { padding: 20px; }
+            .chat-view { padding: 0 10px 10px 10px; }
+            .menu-toggle { display: block; position: absolute; top: 20px; left: 20px; z-index: 101; color: white; background: none; border: none; font-size: 24px; cursor: pointer; }
+        }
+        .menu-toggle { display: none; }
+        .hidden-input { display: none; }
+
+    </style>
+</head>
+<body>
+
+    <!-- Mobile Menu Toggle -->
+    <button class="menu-toggle" id="menuToggle">☰</button>
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+        <div class="logo">
+            <span>Insight</span> Lense
+        </div>
+
+        <div class="menu-label">Main Menu</div>
+        <a href="#" class="menu-item active">
+            <span>🏠</span> Home
+        </a>
+
+        <div class="menu-label" style="margin-top: 24px;">Activity</div>
+        
+        <div class="pdf-card" id="pdfIndicator">
+            <div class="pdf-info">
+                <div class="pdf-icon">PDF</div>
+                <div class="pdf-name" id="pdfName">document.pdf</div>
+            </div>
+            <button class="action-btn" id="changePdfBtn">Change Document</button>
+        </div>
+
+        <div class="menu-item" style="margin-top: auto;">
+            <span>👤</span> User
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <div class="top-bar">
+            <div>
+                <h2 id="pageTitle">Document Center</h2>
+                <p id="pageSubtitle">Upload a PDF to start analyzing</p>
+            </div>
+            <div class="status-badge" id="connectionStatus" style="color: var(--success); font-size: 12px;">● System Ready</div>
+        </div>
+
+        <!-- UPLOAD SECTION -->
+        <div class="upload-view" id="uploadSection">
+            <div class="upload-box" id="uploadZone">
+                <div class="upload-icon-large">☁️</div>
+                <h3>Upload Document</h3>
+                <p style="color: var(--text-muted); margin-top: 8px;">Drag & drop your PDF here or click to browse</p>
+                <input type="file" id="pdfInput" class="hidden-input" accept=".pdf">
+            </div>
+        </div>
+
+        <!-- CHAT SECTION -->
+        <div class="chat-view" id="chatSection">
+            <div class="chat-container">
+                <div class="chat-history" id="chatMessages">
+                    <!-- Messages will appear here -->
+                    <div class="message ai">
+                        <span class="msg-label">AI Assistant</span>
+                        <div class="msg-bubble">
+                            Hello! I've analyzed your document. Ask me anything about the charts, tables, or text within it.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="input-area">
+                    <div class="input-wrapper">
+                        <textarea id="messageInput" class="chat-input" placeholder="Ask a question about the PDF..." rows="1"></textarea>
+                        <button id="sendButton" class="send-btn">➤</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        class AppController {
+            constructor() {
+                this.elements = {
+                    uploadSection: document.getElementById('uploadSection'),
+                    chatSection: document.getElementById('chatSection'),
+                    uploadZone: document.getElementById('uploadZone'),
+                    pdfInput: document.getElementById('pdfInput'),
+                    pdfIndicator: document.getElementById('pdfIndicator'),
+                    pdfName: document.getElementById('pdfName'),
+                    chatMessages: document.getElementById('chatMessages'),
+                    messageInput: document.getElementById('messageInput'),
+                    sendButton: document.getElementById('sendButton'),
+                    changePdfBtn: document.getElementById('changePdfBtn'),
+                    pageTitle: document.getElementById('pageTitle'),
+                    pageSubtitle: document.getElementById('pageSubtitle'),
+                    menuToggle: document.getElementById('menuToggle'),
+                    sidebar: document.getElementById('sidebar')
+                };
+
+                this.isLoading = false;
+                this.initListeners();
+                this.checkSessionOnLoad();
+            }
+
+            initListeners() {
+                // File Upload
+                this.elements.uploadZone.addEventListener('click', () => this.elements.pdfInput.click());
+                this.elements.pdfInput.addEventListener('change', (e) => this.handleUpload(e.target.files[0]));
+                
+                // Drag & Drop
+                this.elements.uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); this.elements.uploadZone.style.borderColor = '#6366f1'; });
+                this.elements.uploadZone.addEventListener('dragleave', (e) => { e.preventDefault(); this.elements.uploadZone.style.borderColor = '#2d313e'; });
+                this.elements.uploadZone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    this.elements.uploadZone.style.borderColor = '#2d313e';
+                    if (e.dataTransfer.files.length) this.handleUpload(e.dataTransfer.files[0]);
+                });
+
+                // Chat
+                this.elements.sendButton.addEventListener('click', () => this.sendMessage());
+                this.elements.messageInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.sendMessage(); }
+                });
+                
+                // Textarea Auto-resize
+                this.elements.messageInput.addEventListener('input', function() {
+                    this.style.height = 'auto';
+                    this.style.height = (this.scrollHeight) + 'px';
+                });
+
+                // Change PDF
+                this.elements.changePdfBtn.addEventListener('click', () => this.resetSession());
+
+                // Mobile Menu
+                this.elements.menuToggle.addEventListener('click', () => {
+                    this.elements.sidebar.classList.toggle('open');
+                });
+            }
+
+            async checkSessionOnLoad() {
+                try {
+                    const res = await fetch("/check-session");
+                    const data = await res.json();
+                    if (data.ready) {
+                        this.switchToChatMode("Document Loaded");
+                        this.appendMessage("Welcome back! Your session has been restored.", "ai");
+                    }
+                } catch (e) {
+                    console.log("No active session");
+                }
+            }
+
+            async handleUpload(file) {
+                if (!file || file.type !== 'application/pdf') return alert("Please select a PDF file.");
+                
+                // UI Loading State
+                const originalText = this.elements.uploadZone.innerHTML;
+                this.elements.uploadZone.innerHTML = `<div class="typing-indicator"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div><p>Processing Document...</p>`;
+                
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const res = await fetch('/upload-pdf', { method: 'POST', body: formData });
+                    const data = await res.json();
+                    
+                    if (data.success) {
+                        this.elements.pdfName.textContent = file.name;
+                        this.switchToChatMode(file.name);
+                    } else {
+                        alert("Upload failed: " + (data.error || "Unknown error"));
+                        this.elements.uploadZone.innerHTML = originalText;
+                    }
+                } catch (e) {
+                    alert("Network error");
+                    this.elements.uploadZone.innerHTML = originalText;
+                }
+            }
+
+            async resetSession() {
+                if(!confirm("Are you sure? Chat history will be deleted.")) return;
+                
+                await fetch('/reset-session', { method: 'POST' });
+                location.reload();
+            }
+
+            switchToChatMode(filename) {
+                this.elements.uploadSection.style.display = 'none';
+                this.elements.chatSection.style.display = 'flex';
+                this.elements.pdfIndicator.classList.add('visible');
+                this.elements.pageTitle.textContent = "Chat Workspace";
+                this.elements.pageSubtitle.textContent = `Active File: ${filename}`;
+            }
+
+            async sendMessage() {
+                const text = this.elements.messageInput.value.trim();
+                if (!text || this.isLoading) return;
+
+                // User Message
+                this.appendMessage(text, 'user');
+                this.elements.messageInput.value = '';
+                this.elements.messageInput.style.height = 'auto';
+                this.isLoading = true;
+                this.elements.sendButton.disabled = true;
+
+                // Loading Indicator
+                const loadingId = this.appendLoading();
+
+                try {
+                    const formData = new FormData();
+                    formData.append('question', text);
+                    const res = await fetch('/ask', { method: 'POST', body: formData });
+                    const data = await res.json();
+                    
+                    this.removeLoading(loadingId);
+                    this.appendMessage(data.success ? data.result : "Error processing request.", 'ai');
+                } catch (e) {
+                    this.removeLoading(loadingId);
+                    this.appendMessage("Network error. Please try again.", 'ai');
+                }
+
+                this.isLoading = false;
+                this.elements.sendButton.disabled = false;
+                this.elements.messageInput.focus();
+            }
+
+            appendMessage(text, sender) {
+                const div = document.createElement('div');
+                div.className = `message ${sender}`;
+                div.innerHTML = `
+                    <span class="msg-label">${sender === 'user' ? 'You' : 'AI Assistant'}</span>
+                    <div class="msg-bubble">${this.formatText(text)}</div>
+                `;
+                this.elements.chatMessages.appendChild(div);
+                this.scrollToBottom();
+            }
+
+            appendLoading() {
+                const id = 'loading-' + Date.now();
+                const div = document.createElement('div');
+                div.id = id;
+                div.className = 'message ai';
+                div.innerHTML = `
+                    <span class="msg-label">AI Assistant</span>
+                    <div class="msg-bubble">
+                        <div class="typing-indicator">
+                            <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                        </div>
+                    </div>
+                `;
+                this.elements.chatMessages.appendChild(div);
+                this.scrollToBottom();
+                return id;
+            }
+
+            removeLoading(id) {
+                const el = document.getElementById(id);
+                if (el) el.remove();
+            }
+
+            scrollToBottom() {
+                this.elements.chatMessages.scrollTo({
+                    top: this.elements.chatMessages.scrollHeight,
+                    behavior: 'smooth'
+                });
+            }
+
+            formatText(text) {
+                // Basic markdown-like formatting for safety
+                return text.replace(/\n/g, '<br>');
+            }
+        }
+
+        // Initialize App
+        document.addEventListener('DOMContentLoaded', () => {
+            new AppController();
+        });
+    </script>
+</body>
+</html>
