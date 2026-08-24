@@ -1,4 +1,4 @@
-# 🤖 InsightLense - Multimodal RAG Document Assistant
+# InsightLense - Multimodal RAG Document Assistant
 
 InsightLense is a next-generation Retrieval-Augmented Generation (RAG) chatbot capable of understanding **Text, Tables, and Charts** within PDF documents. 
 
@@ -6,7 +6,7 @@ Unlike standard chatbots that only read text, InsightLense uses **Computer Visio
 
 ---
 
-## 🚀 Key Features
+## Key Features
 
 - **Multimodal Ingestion:** Extracts and understands complex charts and figures using Google Gemini Vision.
 - **Smart Table Parsing:** Preserves table structures using LlamaParse (Markdown mode) for accurate data retrieval.
@@ -15,7 +15,7 @@ Unlike standard chatbots that only read text, InsightLense uses **Computer Visio
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **LLM:** Llama-3 / GPT-OSS (via Groq) for high-speed reasoning & answering.
 - **Vision Model:** Gemini 2.5 Flash (via `google-genai` SDK) to parse images and diagrams.
@@ -26,7 +26,7 @@ Unlike standard chatbots that only read text, InsightLense uses **Computer Visio
 
 ---
 
-## ⚙️ Installation & Usage
+## Installation & Usage
 
 ### 1. Clone the Repository
 ```bash
@@ -60,7 +60,7 @@ uvicorn main:app --reload
 
 ---
 
-## 📊 High Level Design (HLD)
+## High Level Design (HLD)
 
 The following sequence diagram illustrates the core workflows of InsightLense: **Document Ingestion** and **Question Answering (RAG)**.
 
