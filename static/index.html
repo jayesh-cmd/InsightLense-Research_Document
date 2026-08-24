@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF AI Workspace</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/inter-ui/3.19.3/inter.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         :root {
             --bg-dark: #0e1016; /* Deepest background */
@@ -331,6 +332,48 @@
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
+        /* Markdown Rendered Content */
+        .msg-bubble p { margin: 0 0 8px 0; }
+        .msg-bubble p:last-child { margin-bottom: 0; }
+        .msg-bubble ul, .msg-bubble ol { padding-left: 20px; margin: 6px 0; }
+        .msg-bubble li { margin-bottom: 4px; line-height: 1.6; }
+        .msg-bubble strong { color: #a5b4fc; font-weight: 600; }
+        .msg-bubble h1, .msg-bubble h2, .msg-bubble h3 {
+            margin: 12px 0 6px 0;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+        .msg-bubble h3 { font-size: 15px; }
+        /* Table Styling */
+        .msg-bubble table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+            font-size: 13px;
+        }
+        .msg-bubble th {
+            background: rgba(99, 102, 241, 0.15);
+            color: #a5b4fc;
+            padding: 8px 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+            font-weight: 600;
+        }
+        .msg-bubble td {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            vertical-align: top;
+        }
+        .msg-bubble tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
+        .msg-bubble code {
+            background: rgba(0,0,0,0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: monospace;
+        }
+
         /* Mobile */
         @media (max-width: 768px) {
             .sidebar { position: absolute; left: -260px; height: 100%; z-index: 100; }
@@ -606,8 +649,8 @@
             }
 
             formatText(text) {
-                // Basic markdown-like formatting for safety
-                return text.replace(/\n/g, '<br>');
+                // Use marked.js to render full markdown (bold, tables, lists, etc.)
+                return marked.parse(text);
             }
         }
 

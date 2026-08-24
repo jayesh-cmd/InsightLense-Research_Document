@@ -1,14 +1,13 @@
 import os
 import shutil
 
-# Suppress HuggingFace and transformers warnings
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "false"
-import logging
+
 from transformers.utils import logging as hf_logging
 hf_logging.set_verbosity_error()
-import base64
+
 from google import genai
 from google.genai import types
 from fastapi import FastAPI, File, UploadFile, Form
@@ -25,21 +24,19 @@ from langchain_core.documents import Document
 from langchain_groq import ChatGroq
 from langchain_classic.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
-
 from langchain_core.prompts import PromptTemplate
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_classic.chains import create_retrieval_chain
 
 from llama_parse import LlamaParse
 import fitz
-
 from dotenv import load_dotenv
 
 load_dotenv()
+
 client = genai.Client(vertexai=False, api_key=os.getenv("GEMINI_API_KEY"))
 
 app = FastAPI()
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -52,56 +49,54 @@ if not os.path.exists("static"):
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 DB_FAISS_PATH = "vectorstore/db_faiss_v2"
-pdf_memory = None
 conversation_history = []
-
 last_interaction_time = time.time()
-TIMEOUT_SECONDS = 3600  # 1 Hour
+TIMEOUT_SECONDS = 3600  # 1 hour
+
+# --- Globals cached at startup (never re-created per query) ---
+print("Loading embedding model...")
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+print("Embedding model ready.")
+
+llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0.1)
+
+pdf_memory = None       # FAISS index
+bm25_retriever = None   # BM25 index
 
 
 def update_interaction():
-    """Reset the timer whenever the user does something."""
     global last_interaction_time
     last_interaction_time = time.time()
 
 
 def cleanup_loop():
-    """Background thread to delete vectorstore after 1 hour of inactivity."""
-    global pdf_memory, conversation_history, last_interaction_time
+    """Background thread: deletes vectorstore after 1 hour of inactivity."""
+    global pdf_memory, bm25_retriever, conversation_history, last_interaction_time
     while True:
         time.sleep(60)
         elapsed = time.time() - last_interaction_time
-
         if elapsed > TIMEOUT_SECONDS and os.path.exists(DB_FAISS_PATH):
-            print(f"--- INACTIVITY DETECTED ({elapsed:.0f}s). DELETING VECTORSTORE... ---")
+            print(f"Inactivity detected ({elapsed:.0f}s). Cleaning up...")
             try:
                 shutil.rmtree(DB_FAISS_PATH)
                 pdf_memory = None
+                bm25_retriever = None
                 conversation_history = []
-                print("--- CLEANUP COMPLETE ---")
+                print("Cleanup complete.")
             except Exception as e:
-                print(f"Error during cleanup: {e}")
+                print(f"Cleanup error: {e}")
 
 
 cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
 cleanup_thread.start()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# FIX 1: Improved image summarization prompt — now captures spatial layout,
-#         centre elements, connections, and positional relationships so that
-#         questions like "what is the centre of the POPIT model?" are answered
-#         correctly from the [VISUAL ANALYSIS] block.
-# ─────────────────────────────────────────────────────────────────────────────
 def summarize_image(image_bytes):
     try:
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[
-                types.Part.from_bytes(
-                    data=image_bytes,
-                    mime_type="image/jpeg",
-                ),
+                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
                 """Analyze this image in detail and describe ALL of the following:
 
 1. LAYOUT & STRUCTURE: Describe the spatial arrangement — what is at the center, what surrounds it, how elements are positioned relative to each other (top, bottom, left, right, inside, outside, overlapping).
@@ -136,17 +131,22 @@ Be extremely specific about positions and relationships. Do not omit any labeled
         return "[Image caption failed]"
 
 
+# Load existing vectorstore and build BM25 cache at startup
 if os.path.exists(DB_FAISS_PATH):
     print("Found existing vectorstore. Loading...")
     try:
-        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
         pdf_memory = FAISS.load_local(DB_FAISS_PATH, embeddings, allow_dangerous_deserialization=True)
-        print("Vectorstore loaded successfully.")
+        docstore_docs = list(pdf_memory.docstore._dict.values())
+        if docstore_docs:
+            bm25_retriever = BM25Retriever.from_documents(docstore_docs)
+            bm25_retriever.k = 6
+        print("Vectorstore and BM25 index ready.")
     except Exception as e:
         print(f"Failed to load existing vectorstore: {e}")
 
 
 def process_multimodal_pdf(pdf_path: str):
+    global pdf_memory, bm25_retriever  # must declare global or assignments stay local
     print("--- STARTING INGESTION ---")
 
     try:
@@ -172,15 +172,12 @@ def process_multimodal_pdf(pdf_path: str):
         has_visuals = len(images) > 0 or len(drawings) > 0
 
         caption = ""
-
         if has_visuals:
             print(f"Visuals found on Page {page_num}. Rendering page...")
             try:
                 time.sleep(2.5)
-
                 pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
                 img_bytes = pix.tobytes("png")
-
                 caption = summarize_image(img_bytes)
 
                 if "429" in caption or "quota" in caption.lower():
@@ -188,7 +185,6 @@ def process_multimodal_pdf(pdf_path: str):
                     caption = ""
                 else:
                     caption = f"\n\n[VISUAL ANALYSIS OF PAGE {page_num}]\n{caption}\n[END VISUAL ANALYSIS]\n"
-
             except Exception as e:
                 print(f"Visual Analysis Failed for Page {page_num}: {e}")
                 caption = ""
@@ -199,71 +195,44 @@ def process_multimodal_pdf(pdf_path: str):
 
         full_combined_text += f"--- PAGE {page_num} ---\n{text_content}\n{caption}\n\n"
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # FIX 2: Larger chunk size so [VISUAL ANALYSIS] blocks are NOT split across
-    #         chunks. At 500 chars the blocks were frequently cut in half,
-    #         causing the retriever to pick up incomplete visual descriptions.
-    # ─────────────────────────────────────────────────────────────────────────
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1200,   # increased from 500
-        chunk_overlap=200  # increased from 100
-    )
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=400)
     chunks = splitter.split_text(full_combined_text)
-
     documents = [Document(page_content=chunk, metadata={"source": pdf_path}) for chunk in chunks]
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-    global pdf_memory
     pdf_memory = FAISS.from_documents(documents, embeddings)
     pdf_memory.save_local(DB_FAISS_PATH)
+
+    # Rebuild BM25 cache after new upload
+    bm25_retriever = BM25Retriever.from_documents(documents)
+    bm25_retriever.k = 6
 
     print(f"--- INGESTION COMPLETE: {len(chunks)} chunks stored. ---")
     return len(chunks)
 
 
 def get_ai_response(query: str):
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    global conversation_history
 
-    try:
-        vector_db = FAISS.load_local(DB_FAISS_PATH, embeddings, allow_dangerous_deserialization=True)
-    except:
+    if pdf_memory is None:
         return "System Error: Please re-upload the PDF to initialize the database."
 
-    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.1)
+    faiss_retriever = pdf_memory.as_retriever(search_kwargs={"k": 6})
 
-    global conversation_history
+    if bm25_retriever:
+        retriever_to_use = EnsembleRetriever(
+            retrievers=[faiss_retriever, bm25_retriever],
+            weights=[0.5, 0.5]
+        )
+    else:
+        retriever_to_use = faiss_retriever
+
     clean_history = []
     for msg in conversation_history[-5:]:
         role = msg['role']
         content = msg['content'].replace("{", "(").replace("}", ")")
         clean_history.append(f"{role}: {content}")
-
     history_str = "\n".join(clean_history)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # FIX 3: Increased retriever k from 5 → 8 on both FAISS and BM25 so more
-    #         relevant chunks (including visual analysis blocks) are surfaced.
-    # ─────────────────────────────────────────────────────────────────────────
-    faiss_retriever = vector_db.as_retriever(search_kwargs={"k": 8})
-    docstore_docs = list(vector_db.docstore._dict.values())
-
-    if docstore_docs:
-        bm25_retriever = BM25Retriever.from_documents(docstore_docs)
-        bm25_retriever.k = 8
-        ensemble_retriever = EnsembleRetriever(
-            retrievers=[faiss_retriever, bm25_retriever],
-            weights=[0.5, 0.5]
-        )
-        retriever_to_use = ensemble_retriever
-    else:
-        retriever_to_use = faiss_retriever
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # FIX 4: Improved prompt — now explicitly instructs the LLM to:
-    #   • PRIORITIZE [VISUAL ANALYSIS] sections for diagram/figure questions
-    #   • Answer centre/position questions from the spatial description only
-    #   • Not override visual analysis with surrounding text
-    # ─────────────────────────────────────────────────────────────────────────
     prompt_template_str = f"""
     You are an expert Business and Financial Analyst.
 
@@ -277,28 +246,24 @@ def get_ai_response(query: str):
     {{input}}
 
     # INSTRUCTIONS:
-    0. **Scope:** Only answer from the provided context. If the topic is not covered in the context, apologize and clearly state that the document does not contain that information.
+    0. Answer from the provided context. If the topic is partially covered, share what IS available and note it may be incomplete. Only refuse if the topic is completely absent.
 
-    1. **Figures & Diagrams — HIGHEST PRIORITY RULE:** When the question refers to a figure, diagram, model, or any visual element (e.g. "Figure 1.1", "Figure 1.3", "POPIT model", "business change lifecycle", "centre point", "what is in the middle"), you MUST search for and give PRIORITY to the [VISUAL ANALYSIS OF PAGE X] sections in the context. These sections contain the definitive, ground-truth spatial description of the diagram as it actually appears.
+    1. Figures & Diagrams: When the question refers to a figure, diagram, model, or visual element, give PRIORITY to the [VISUAL ANALYSIS OF PAGE X] sections. These contain the definitive spatial description.
 
-    2. **Spatial / Position Questions:** If the user asks about the centre, middle, top, bottom, left, right, or any positional aspect of a diagram or model, answer STRICTLY from the [VISUAL ANALYSIS] spatial description. Do NOT infer positions from surrounding text — the visual analysis is the authoritative source.
+    2. Spatial / Position Questions: If asked about the centre, middle, top, bottom, left, or right of a diagram, answer STRICTLY from the [VISUAL ANALYSIS] block. Do NOT infer from surrounding text.
 
-    3. **Figure Identification:** If asked about a specific figure number (e.g. "Figure 1.3"), find the [VISUAL ANALYSIS] block on that page and describe ALL labeled elements, their positions, arrows, and connections as stated in the analysis.
+    3. Figure Identification: If asked about a specific figure number, find the matching [VISUAL ANALYSIS] block and describe all labeled elements, positions, arrows, and connections.
 
-    4. **Charts & Graphs:** Use [VISUAL ANALYSIS] sections to answer questions about chart values, trends, axis labels, and legend meanings.
+    4. Charts & Graphs: Use [VISUAL ANALYSIS] sections for chart values, trends, axis labels, and legend meanings.
 
-    5. **Exact Numbers:** Look for EXACT numbers (e.g., "2%", "20%") — do not approximate or guess.
+    5. Exact Numbers: Use EXACT numbers from the context. Do not approximate.
 
-    6. **Tables:** Do not confuse column years (e.g. 2024 vs 2025). Always read column headers carefully.
+    6. Tables: Read column headers carefully. Do not confuse years or column values.
 
     Answer:
     """
 
-    prompt = PromptTemplate(
-        input_variables=["context", "input"],
-        template=prompt_template_str
-    )
-
+    prompt = PromptTemplate(input_variables=["context", "input"], template=prompt_template_str)
     document_chain = create_stuff_documents_chain(llm, prompt)
     retrieval_chain = create_retrieval_chain(retriever_to_use, document_chain)
 
@@ -313,10 +278,11 @@ def get_ai_response(query: str):
 
 @app.post("/reset-session")
 async def reset_session():
-    """Clears the current vectorstore and history to allow a new upload."""
-    global pdf_memory, conversation_history, last_interaction_time
+    """Clears vectorstore and history for a fresh upload."""
+    global pdf_memory, bm25_retriever, conversation_history
 
     pdf_memory = None
+    bm25_retriever = None
     conversation_history = []
 
     if os.path.exists(DB_FAISS_PATH):
@@ -330,7 +296,7 @@ async def reset_session():
 
 @app.get("/check-session")
 async def check_session():
-    """Returns True if the vectorstore exists, telling UI to skip upload."""
+    """Returns True if vectorstore exists, so UI can skip the upload step."""
     update_interaction()
     if os.path.exists(DB_FAISS_PATH):
         return {"ready": True}
@@ -362,7 +328,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 @app.post("/ask")
 async def ask(question: str = Form(...)):
     update_interaction()
-    if not os.path.exists(DB_FAISS_PATH):
+    if pdf_memory is None and not os.path.exists(DB_FAISS_PATH):
         return {"success": False, "result": "Please upload a PDF first."}
     return {"success": True, "result": get_ai_response(question)}
 

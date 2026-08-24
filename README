@@ -48,3 +48,61 @@ Unlike standard chatbots that only read text, this system uses **Computer Vision
     * Open `http://127.0.0.1:8000`.
     * **Step 1:** Upload a PDF via `/upload-pdf`.
     * **Step 2:** Ask questions via `/ask` (e.g., *"What does Figure 8 show about LNG supply?"*).
+
+## 📊 High Level Design (HLD)
+
+The following sequence diagram illustrates the core workflows of InsightLense: **Document Ingestion** and **Question Answering (RAG)**.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Frontend as UI (HTML/JS)
+    participant Backend as FastAPI Server
+    participant LlamaParse as LlamaCloud API
+    participant Gemini as Google Gemini Vision
+    participant VectorDB as FAISS & BM25
+    participant LLM as Groq LLM
+
+    %% Document Ingestion Flow
+    rect rgb(30, 30, 40)
+    Note right of User: Document Ingestion Flow
+    User->>Frontend: Upload PDF Document
+    Frontend->>Backend: POST /upload-pdf
+    activate Backend
+    
+    Backend->>LlamaParse: Extract Markdown (Text & Tables)
+    LlamaParse-->>Backend: Return Parsed Content
+    
+    loop For each page with visuals
+        Backend->>Backend: Extract Image/Drawings (PyMuPDF)
+        Backend->>Gemini: Send Image for Visual Analysis
+        Gemini-->>Backend: Return Detailed Image Description
+    end
+    
+    Backend->>Backend: Combine Text + Visual Descriptions
+    Backend->>Backend: Split into Chunks
+    Backend->>VectorDB: Generate Embeddings & Save Index
+    
+    Backend-->>Frontend: Upload Success
+    deactivate Backend
+    Frontend-->>User: Ready for Chat
+    end
+
+    %% Question Answering Flow
+    rect rgb(30, 40, 30)
+    Note right of User: Question Answering Flow (RAG)
+    User->>Frontend: Ask Question
+    Frontend->>Backend: POST /ask
+    activate Backend
+    
+    Backend->>VectorDB: Hybrid Search (FAISS + BM25)
+    VectorDB-->>Backend: Return Relevant Chunks
+    
+    Backend->>LLM: Send Prompt + Context + Chat History
+    LLM-->>Backend: Return Generated Answer
+    
+    Backend-->>Frontend: AI Response
+    deactivate Backend
+    Frontend-->>User: Display Answer
+    end
+```
